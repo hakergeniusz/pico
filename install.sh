@@ -1,6 +1,6 @@
 #!/bin/sh
 # pico standalone installer for Linux, macOS and FreeBSD.
-# Usage: curl -fsSL https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.sh | sh
+# Usage: curl -fsSL https://hakergeniusz.github.io/pico/install.sh | sh
 # Env: PICO_VERSION (release tag), PICO_BASE_URL (override release base),
 #      PICO_INSTALL_DIR (default: $HOME/.local/bin).
 set -eu

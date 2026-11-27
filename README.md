@@ -23,7 +23,7 @@ pass one when you intend to save.
 ## Install with a one-liner
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.sh | sh
+curl -fsSL https://hakergeniusz.github.io/pico/install.sh | sh
 ```
 
 The installer puts `pico` in `~/.local/bin` by default. Override with
@@ -34,7 +34,7 @@ before installing. `PICO_TOKEN` is only needed for private forks.
 On Windows, use PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.ps1 | iex
+irm https://hakergeniusz.github.io/pico/install.ps1 | iex
 ```
 
 `install.ps1` installs `pico.exe` to `$env:LOCALAPPDATA\pico\bin` by default.

@@ -8,7 +8,7 @@ param(
 )
 
 # Windows installer for pico.
-# Usage: irm https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.ps1 | iex
+# Usage: irm https://hakergeniusz.github.io/pico/install.ps1 | iex
 # Env equivalents: PICO_VERSION, PICO_BASE_URL, PICO_INSTALL_DIR, PICO_TOKEN.
 
 $ErrorActionPreference = "Stop"
