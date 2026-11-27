@@ -54,6 +54,19 @@ fn thumb_bounds(total: usize, viewport: usize, scroll: usize, track: usize) -> (
     (start, size)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PromptAction {
+    Search,
+    ReplaceOne,
+    ReplaceAll,
+}
+
+struct Prompt {
+    action: PromptAction,
+    label: &'static str,
+    value: String,
+}
+
 struct App {
     buffer: Buffer,
     row: usize,
@@ -66,6 +79,11 @@ struct App {
     scrollbar_area: Rect,
     gutter_width: usize,
     viewport: usize,
+    prompt: Option<Prompt>,
+    search_query: String,
+    matches: Vec<(Pos, Pos)>,
+    current_match: usize,
+    case_sensitive: bool,
     message: String,
     quit_armed: bool,
 }
@@ -84,7 +102,12 @@ impl App {
             scrollbar_area: Rect::new(0, 0, 0, 0),
             gutter_width: 1,
             viewport: 1,
-            message: "Ctrl+S save | Ctrl+Z undo | Ctrl+R restore | wheel scroll | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
+            prompt: None,
+            search_query: String::new(),
+            matches: Vec::new(),
+            current_match: 0,
+            case_sensitive: false,
+            message: "Ctrl+S save | Ctrl+F search | Ctrl+Z undo | Ctrl+R restore | wheel scroll | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
             quit_armed: false,
         }
     }
@@ -190,6 +213,132 @@ impl App {
             Ok(None) => self.message = "no backups found".to_string(),
             Err(error) => self.message = format!("backup lookup failed: {error}"),
         }
+    }
+
+    fn open_prompt(&mut self, action: PromptAction, label: &'static str) {
+        self.prompt = Some(Prompt {
+            action,
+            label,
+            value: String::new(),
+        });
+        self.message.clear();
+    }
+
+    fn handle_prompt_key(&mut self, key: KeyEvent) -> bool {
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        match key.code {
+            KeyCode::Esc => {
+                self.prompt = None;
+                self.message = "prompt cancelled".to_string();
+                return true;
+            }
+            KeyCode::Enter => {
+                if let Some(prompt) = self.prompt.take() {
+                    self.accept_prompt(prompt);
+                }
+                return true;
+            }
+            KeyCode::Backspace => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.value.pop();
+                }
+                return true;
+            }
+            KeyCode::Char('c') if alt => {
+                self.case_sensitive = !self.case_sensitive;
+                return true;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.value.push(c);
+                }
+                return true;
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn accept_prompt(&mut self, prompt: Prompt) {
+        match prompt.action {
+            PromptAction::Search => {
+                self.search_query = prompt.value;
+                self.recompute_matches();
+                if self.matches.is_empty() {
+                    self.message = format!("no matches for '{}'", self.search_query);
+                } else {
+                    self.current_match = 0;
+                    self.goto_match(0);
+                    self.message = format!("match 1/{}", self.matches.len());
+                }
+            }
+            PromptAction::ReplaceOne => self.replace_current(&prompt.value),
+            PromptAction::ReplaceAll => self.replace_all(&prompt.value),
+        }
+    }
+
+    fn recompute_matches(&mut self) {
+        self.matches = self
+            .buffer
+            .find_matches(&self.search_query, self.case_sensitive);
+        if self.current_match >= self.matches.len() {
+            self.current_match = 0;
+        }
+    }
+
+    fn goto_match(&mut self, index: usize) {
+        if let Some((start, _)) = self.matches.get(index).copied() {
+            self.row = start.row;
+            self.col = start.col;
+            self.clear_selection();
+            self.clamp();
+            self.ensure_visible(self.viewport);
+            self.current_match = index;
+        }
+    }
+
+    fn next_match(&mut self, delta: isize) {
+        if self.matches.is_empty() {
+            self.message = "no matches".to_string();
+            return;
+        }
+        let len = self.matches.len() as isize;
+        let index = (self.current_match as isize + delta).rem_euclid(len) as usize;
+        self.goto_match(index);
+        self.message = format!("match {}/{}", index + 1, len);
+    }
+
+    fn replace_current(&mut self, text: &str) {
+        if self.matches.is_empty() {
+            self.message = "no matches".to_string();
+            return;
+        }
+        let index = self.current_match;
+        let (start, end) = self.matches[index];
+        self.snapshot();
+        let (row, col) = self.buffer.replace_range(start, end, text);
+        self.row = row;
+        self.col = col;
+        self.recompute_matches();
+        if !self.matches.is_empty() {
+            let index = index.min(self.matches.len() - 1);
+            self.goto_match(index);
+        }
+        self.message = "replaced 1 match".to_string();
+    }
+
+    fn replace_all(&mut self, text: &str) {
+        if self.matches.is_empty() {
+            self.message = "no matches".to_string();
+            return;
+        }
+        let count = self.matches.len();
+        self.snapshot();
+        for (start, end) in self.matches.iter().rev().copied() {
+            self.buffer.replace_range(start, end, text);
+        }
+        self.recompute_matches();
+        self.message = format!("replaced {count} matches");
     }
 
     fn clamp(&mut self) {
@@ -310,7 +459,25 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return true;
         }
+        if self.prompt.is_some() {
+            return self.handle_prompt_key(key);
+        }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+
+        if control && alt && key.code == KeyCode::Char('h') {
+            self.open_prompt(PromptAction::ReplaceAll, "Replace all with");
+            return true;
+        }
+        if key.code == KeyCode::F(3) {
+            let backwards = key.modifiers.contains(KeyModifiers::SHIFT);
+            self.next_match(if backwards { -1 } else { 1 });
+            return true;
+        }
+        if key.code == KeyCode::BackTab {
+            self.next_match(-1);
+            return true;
+        }
 
         match (key.code, control) {
             (KeyCode::Char('s'), true) => {
@@ -348,6 +515,12 @@ impl App {
             (KeyCode::Char('c'), true) => self.copy_selection(),
             (KeyCode::Char('v'), true) => self.paste(),
             (KeyCode::Char('r'), true) => self.restore_backup(),
+            (KeyCode::Char('f'), true) => {
+                self.open_prompt(PromptAction::Search, "Search")
+            }
+            (KeyCode::Char('h'), true) => {
+                self.open_prompt(PromptAction::ReplaceOne, "Replace with")
+            }
             (KeyCode::Char('q'), true) | (KeyCode::Esc, _) => {
                 if self.buffer.dirty && !self.quit_armed {
                     self.quit_armed = true;
@@ -454,7 +627,12 @@ impl App {
     }
 }
 
-fn highlighted(line: &[char], styles: &[Style], selection: Option<(usize, usize)>) -> Line<'static> {
+fn highlighted(
+    line: &[char],
+    styles: &[Style],
+    selection: Option<(usize, usize)>,
+    matches: &[(usize, usize, bool)],
+) -> Line<'static> {
     let len = line.len();
     if len == 0 {
         return Line::from(String::new());
@@ -466,11 +644,21 @@ fn highlighted(line: &[char], styles: &[Style], selection: Option<(usize, usize)
 
     let style_at = |index: usize| {
         let base = styles.get(index).copied().unwrap_or_default();
-        if (from..to).contains(&index) {
+        let mut style = if (from..to).contains(&index) {
             base.add_modifier(Modifier::REVERSED)
         } else {
             base
+        };
+        for &(match_from, match_to, is_current) in matches {
+            if (match_from..match_to).contains(&index) {
+                style = if is_current {
+                    style.bg(Color::Yellow)
+                } else {
+                    style.add_modifier(Modifier::UNDERLINED)
+                };
+            }
         }
+        style
     };
 
     let mut spans = Vec::new();
@@ -535,7 +723,19 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .map(|(offset, line)| {
             let row = app.scroll + offset;
             let styles = syntax::styles_for_line(line, &ext);
-            highlighted(line, &styles, app.selection_for_row(row, line.len()))
+            let row_matches: Vec<(usize, usize, bool)> = app
+                .matches
+                .iter()
+                .enumerate()
+                .filter(|(_, (start, end))| start.row == row && end.row == row)
+                .map(|(index, (start, end))| (start.col, end.col, index == app.current_match))
+                .collect();
+            highlighted(
+                line,
+                &styles,
+                app.selection_for_row(row, line.len()),
+                &row_matches,
+            )
         })
         .collect();
 
@@ -564,12 +764,21 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "untitled".to_string());
     let dirty = if app.buffer.dirty { " *" } else { "" };
-    let status = format!(
-        " {name}{dirty}  L{}:{}  {}",
-        app.row + 1,
-        app.col + 1,
-        app.message
-    );
+    let status = match &app.prompt {
+        Some(prompt) => {
+            let case = if app.case_sensitive { "Aa" } else { "aa" };
+            format!(
+                " {}: {}  [{}]  Enter ok | Esc cancel | Alt+C case",
+                prompt.label, prompt.value, case
+            )
+        }
+        None => format!(
+            " {name}{dirty}  L{}:{}  {}",
+            app.row + 1,
+            app.col + 1,
+            app.message
+        ),
+    };
     frame.render_widget(
         Paragraph::new(status).style(
             Style::default()
@@ -580,7 +789,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
         status_area,
     );
 
-    if text_area.height > 0
+    if let Some(prompt) = &app.prompt {
+        let offset = 2 + prompt.label.chars().count() + prompt.value.chars().count();
+        let x = status_area.x + (offset as u16).min(status_area.right().saturating_sub(1));
+        frame.set_cursor_position((x, status_area.y));
+    } else if text_area.height > 0
         && text_area.width > 0
         && app.row >= app.scroll
         && app.row < app.scroll + visible

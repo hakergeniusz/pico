@@ -197,6 +197,58 @@ impl Buffer {
         text
     }
 
+    pub fn find_matches(&self, query: &str, case_sensitive: bool) -> Vec<(Pos, Pos)> {
+        let needle: Vec<char> = if case_sensitive {
+            query.chars().collect()
+        } else {
+            query.chars().flat_map(char::to_lowercase).collect()
+        };
+        if needle.is_empty() {
+            return Vec::new();
+        }
+        let mut matches = Vec::new();
+        for (row, line) in self.lines.iter().enumerate() {
+            let mut lowered = Vec::new();
+            let mut origin = Vec::new();
+            for (col, ch) in line.iter().enumerate() {
+                if case_sensitive {
+                    lowered.push(*ch);
+                    origin.push(col);
+                } else {
+                    for folded in ch.to_lowercase() {
+                        lowered.push(folded);
+                        origin.push(col);
+                    }
+                }
+            }
+            if lowered.len() < needle.len() {
+                continue;
+            }
+            for start in 0..=lowered.len() - needle.len() {
+                if lowered[start..start + needle.len()] == needle[..] {
+                    let from = origin[start];
+                    let to = origin[start + needle.len() - 1] + 1;
+                    matches.push((Pos::new(row, from), Pos::new(row, to)));
+                }
+            }
+        }
+        matches
+    }
+
+    pub fn replace_range(&mut self, start: Pos, end: Pos, text: &str) -> (usize, usize) {
+        let Some(line) = self.lines.get_mut(start.row) else {
+            return (start.row, start.col);
+        };
+        let from = start.col.min(line.len());
+        let to = end.col.min(line.len()).max(from);
+        line.drain(from..to);
+        for (offset, ch) in text.chars().enumerate() {
+            line.insert(from + offset, ch);
+        }
+        self.dirty = true;
+        (start.row, from + text.chars().count())
+    }
+
     pub fn insert_text(&mut self, row: usize, col: usize, text: &str) -> (usize, usize) {
         let mut row = row;
         let mut col = col;
@@ -217,6 +269,7 @@ impl Buffer {
 #[cfg(test)]
 mod tests {
     use super::{Buffer, Pos};
+    use std::path::PathBuf;
 
     #[test]
     fn insert_and_delete_before() {
@@ -275,6 +328,18 @@ mod tests {
             "hello\nworld"
         );
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn find_and_replace_ranges() {
+        let mut buffer = Buffer::from_text("Foo bar foo".to_string(), PathBuf::from("x.txt"));
+        let insensitive = buffer.find_matches("foo", false);
+        assert_eq!(insensitive.len(), 2);
+        let sensitive = buffer.find_matches("foo", true);
+        assert_eq!(sensitive.len(), 1);
+        let (row, col) = buffer.replace_range(insensitive[1].0, insensitive[1].1, "BAZ");
+        assert_eq!((row, col), (0, 11));
+        assert_eq!(buffer.as_text(), "Foo bar BAZ");
     }
 
     #[test]

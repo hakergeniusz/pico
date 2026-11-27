@@ -72,6 +72,11 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 | Delete | delete at cursor |
 | Tab | insert four spaces |
 | Ctrl+S | save (with automatic backup and trailing newline) |
+| Ctrl+F | search; type in the status line, Enter to accept |
+| F3 / Shift+F3 (or Shift+Tab) | next / previous match |
+| Ctrl+H | replace the current match (prompts for replacement) |
+| Ctrl+Alt+H | replace all matches |
+| Alt+C (in prompt) | toggle case sensitivity |
 | Ctrl+Z | undo (last 200 edits) |
 | Ctrl+R | restore the newest backup into the buffer |
 | Mouse wheel | scroll three lines at a time |
@@ -94,6 +99,21 @@ Syntax coloring is lightweight and heuristic: comments, strings, numbers and
 common keywords are colored, with a few language-specific keyword sets and
 basic Markdown styling. It is not a full parser and does not replace a real
 syntax plugin.
+
+## Search and replace
+
+Ctrl+F turns the status line into a search field. Type a string and press Enter;
+all matches are underlined, the current one gets a yellow background, and the
+status shows which match you are on. F3 and Shift+F3 move through matches and
+wrap around; Shift+Tab is an alias for the previous match because modified
+function keys vary between terminals. Picking "the next one" is explicit instead
+of hidden in Micro's command flow. Search is case-insensitive by default; press Alt+C while the
+prompt is open to toggle exact case. Esc cancels.
+
+Ctrl+H prompts for a replacement string and changes only the current match;
+Ctrl+Alt+H replaces every match. Both keep the last cursor position sensible and
+are undoable with Ctrl+Z. The search string itself stays active until the next
+Ctrl+F.
 
 ## Backups and EOF newline
 
