@@ -85,7 +85,8 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 | Drag across text | select a range of characters |
 | Ctrl+C | copy the selection |
 | Ctrl+V | paste from the editor's internal clipboard |
-| Ctrl+Q / Esc | quit; press twice if there are unsaved changes |
+| Left / Right / Home / End (in prompt) | move the input cursor |
+| Ctrl+Q / Esc | quit; with unsaved changes, asks `Save changes? (y/n/esc)` |
 
 ## Highlighting and auto-close
 
@@ -102,7 +103,9 @@ syntax plugin.
 
 ## Search and replace
 
-Ctrl+F turns the status line into a search field. Type a string and press Enter;
+Ctrl+F turns the status line into a search field. Left/Right move the input
+cursor, Home/End jump to the ends, Backspace deletes before it, and Enter
+accepts. Type a string and press Enter;
 all matches are underlined, the current one gets a yellow background, and the
 status shows which match you are on. F3 and Shift+F3 move through matches and
 wrap around; Shift+Tab is an alias for the previous match because modified

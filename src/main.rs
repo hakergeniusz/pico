@@ -59,12 +59,39 @@ enum PromptAction {
     Search,
     ReplaceOne,
     ReplaceAll,
+    ConfirmQuit,
 }
 
 struct Prompt {
     action: PromptAction,
     label: &'static str,
     value: String,
+    cursor: usize,
+}
+
+impl Prompt {
+    fn len(&self) -> usize {
+        self.value.chars().count()
+    }
+
+    fn insert(&mut self, ch: char) {
+        let mut chars: Vec<char> = self.value.chars().collect();
+        let at = self.cursor.min(chars.len());
+        chars.insert(at, ch);
+        self.value = chars.into_iter().collect();
+        self.cursor = at + 1;
+    }
+
+    fn delete_before(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let mut chars: Vec<char> = self.value.chars().collect();
+        let at = self.cursor.min(chars.len());
+        chars.remove(at - 1);
+        self.value = chars.into_iter().collect();
+        self.cursor -= 1;
+    }
 }
 
 struct App {
@@ -85,7 +112,7 @@ struct App {
     current_match: usize,
     case_sensitive: bool,
     message: String,
-    quit_armed: bool,
+    should_quit: bool,
 }
 
 impl App {
@@ -108,7 +135,7 @@ impl App {
             current_match: 0,
             case_sensitive: false,
             message: "Ctrl+S save | Ctrl+F search | Ctrl+Z undo | Ctrl+R restore | wheel scroll | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
-            quit_armed: false,
+            should_quit: false,
         }
     }
 
@@ -184,7 +211,6 @@ impl App {
         self.col = col;
         self.clear_selection();
         self.message = "pasted".to_string();
-        self.quit_armed = false;
     }
 
     fn restore_backup(&mut self) {
@@ -206,12 +232,44 @@ impl App {
                         .and_then(|name| name.to_str())
                         .unwrap_or("backup");
                     self.message = format!("restored {name}, Ctrl+S to keep it");
-                    self.quit_armed = false;
-                }
+                            }
                 Err(error) => self.message = format!("restore failed: {error}"),
             },
             Ok(None) => self.message = "no backups found".to_string(),
             Err(error) => self.message = format!("backup lookup failed: {error}"),
+        }
+    }
+
+    fn save_file(&mut self) -> bool {
+        let backup_result = match self.buffer.path.as_ref() {
+            Some(path) => backup::before_save(path),
+            None => Ok(PathBuf::new()),
+        };
+        match backup_result {
+            Ok(_) => match self.buffer.save() {
+                Ok(()) => {
+                    self.message = "saved".to_string();
+                    true
+                }
+                Err(error) => {
+                    self.message = format!("save failed: {error}");
+                    false
+                }
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => match self.buffer.save() {
+                Ok(()) => {
+                    self.message = "saved".to_string();
+                    true
+                }
+                Err(error) => {
+                    self.message = format!("save failed: {error}");
+                    false
+                }
+            },
+            Err(error) => {
+                self.message = format!("backup failed: {error}; not saved");
+                false
+            }
         }
     }
 
@@ -220,12 +278,44 @@ impl App {
             action,
             label,
             value: String::new(),
+            cursor: 0,
         });
         self.message.clear();
     }
 
     fn handle_prompt_key(&mut self, key: KeyEvent) -> bool {
         let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+
+        if self
+            .prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.action == PromptAction::ConfirmQuit)
+        {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.prompt = None;
+                    if self.save_file() {
+                        self.should_quit = true;
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    self.prompt = None;
+                    self.should_quit = true;
+                }
+                KeyCode::Char('q') if control => {
+                    self.prompt = None;
+                    self.should_quit = true;
+                }
+                KeyCode::Esc => {
+                    self.prompt = None;
+                    self.message = "quit cancelled".to_string();
+                }
+                _ => {}
+            }
+            return true;
+        }
+
         match key.code {
             KeyCode::Esc => {
                 self.prompt = None;
@@ -240,7 +330,31 @@ impl App {
             }
             KeyCode::Backspace => {
                 if let Some(prompt) = self.prompt.as_mut() {
-                    prompt.value.pop();
+                    prompt.delete_before();
+                }
+                return true;
+            }
+            KeyCode::Left => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.cursor = prompt.cursor.saturating_sub(1);
+                }
+                return true;
+            }
+            KeyCode::Right => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.cursor = (prompt.cursor + 1).min(prompt.len());
+                }
+                return true;
+            }
+            KeyCode::Home => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.cursor = 0;
+                }
+                return true;
+            }
+            KeyCode::End => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.cursor = prompt.len();
                 }
                 return true;
             }
@@ -248,9 +362,9 @@ impl App {
                 self.case_sensitive = !self.case_sensitive;
                 return true;
             }
-            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char(c) if !control => {
                 if let Some(prompt) = self.prompt.as_mut() {
-                    prompt.value.push(c);
+                    prompt.insert(c);
                 }
                 return true;
             }
@@ -274,6 +388,7 @@ impl App {
             }
             PromptAction::ReplaceOne => self.replace_current(&prompt.value),
             PromptAction::ReplaceAll => self.replace_all(&prompt.value),
+            PromptAction::ConfirmQuit => {}
         }
     }
 
@@ -434,8 +549,7 @@ impl App {
                 self.selection = Some((pos, head));
                 self.row = row;
                 self.col = pos.col;
-                self.quit_armed = false;
-                self.announce_selection();
+                        self.announce_selection();
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 if let Some((anchor, _)) = self.selection {
@@ -481,25 +595,7 @@ impl App {
 
         match (key.code, control) {
             (KeyCode::Char('s'), true) => {
-                let backup_result = match self.buffer.path.as_ref() {
-                    Some(path) => backup::before_save(path),
-                    None => Ok(PathBuf::new()),
-                };
-                match backup_result {
-                    Ok(_) => match self.buffer.save() {
-                        Ok(()) => self.message = "saved".to_string(),
-                        Err(error) => self.message = format!("save failed: {error}"),
-                    },
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        match self.buffer.save() {
-                            Ok(()) => self.message = "saved".to_string(),
-                            Err(error) => self.message = format!("save failed: {error}"),
-                        }
-                    }
-                    Err(error) => {
-                        self.message = format!("backup failed: {error}; not saved")
-                    }
-                }
+                self.save_file();
             }
             (KeyCode::Char('z'), true) => {
                 if let Some((buffer, row, col)) = self.undo.pop() {
@@ -522,11 +618,11 @@ impl App {
                 self.open_prompt(PromptAction::ReplaceOne, "Replace with")
             }
             (KeyCode::Char('q'), true) | (KeyCode::Esc, _) => {
-                if self.buffer.dirty && !self.quit_armed {
-                    self.quit_armed = true;
-                    self.message = "unsaved changes: press again to quit".to_string();
+                if self.buffer.dirty {
+                    self.open_prompt(PromptAction::ConfirmQuit, "Save changes? (y/n/esc)");
                     return true;
                 }
+                self.should_quit = true;
                 return false;
             }
             (KeyCode::Char(c), false) => {
@@ -552,14 +648,12 @@ impl App {
                     self.col += 1;
                 }
                 self.clear_selection();
-                self.quit_armed = false;
-            }
+                    }
             (KeyCode::Tab, _) => {
                 self.snapshot();
                 self.col = self.buffer.insert_str(self.row, self.col, INDENT);
                 self.clear_selection();
-                self.quit_armed = false;
-            }
+                    }
             (KeyCode::Enter, _) => {
                 self.snapshot();
                 if let Some((row, col)) = self.buffer.split_line(self.row, self.col) {
@@ -567,8 +661,7 @@ impl App {
                     self.col = col;
                 }
                 self.clear_selection();
-                self.quit_armed = false;
-            }
+                    }
             (KeyCode::Backspace, _) => {
                 self.snapshot();
                 if let Some((row, col)) = self.buffer.delete_before(self.row, self.col) {
@@ -576,14 +669,12 @@ impl App {
                     self.col = col;
                 }
                 self.clear_selection();
-                self.quit_armed = false;
-            }
+                    }
             (KeyCode::Delete, _) => {
                 self.snapshot();
                 self.buffer.delete_at(self.row, self.col);
                 self.clear_selection();
-                self.quit_armed = false;
-            }
+                    }
             (KeyCode::Left, _) => {
                 self.col = self.col.saturating_sub(1);
                 self.clear_selection();
@@ -765,6 +856,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .unwrap_or_else(|| "untitled".to_string());
     let dirty = if app.buffer.dirty { " *" } else { "" };
     let status = match &app.prompt {
+        Some(prompt) if prompt.action == PromptAction::ConfirmQuit => {
+            format!(" {}   y = save and quit | n = quit | Esc = cancel", prompt.label)
+        }
         Some(prompt) => {
             let case = if app.case_sensitive { "Aa" } else { "aa" };
             format!(
@@ -790,9 +884,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
     );
 
     if let Some(prompt) = &app.prompt {
-        let offset = 2 + prompt.label.chars().count() + prompt.value.chars().count();
-        let x = status_area.x + (offset as u16).min(status_area.right().saturating_sub(1));
-        frame.set_cursor_position((x, status_area.y));
+        if prompt.action != PromptAction::ConfirmQuit {
+            let offset = 2 + prompt.label.chars().count() + prompt.cursor;
+            let x = status_area.x + (offset as u16).min(status_area.right().saturating_sub(1));
+            frame.set_cursor_position((x, status_area.y));
+        }
     } else if text_area.height > 0
         && text_area.width > 0
         && app.row >= app.scroll
@@ -822,6 +918,9 @@ fn run(
             }
             Event::Mouse(mouse) => app.handle_mouse(mouse),
             _ => {}
+        }
+        if app.should_quit {
+            break;
         }
     }
     Ok(())
@@ -854,7 +953,26 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{closing_pair, is_closing, thumb_bounds, App, Buffer};
+    use super::{closing_pair, is_closing, thumb_bounds, App, Buffer, Prompt, PromptAction};
+
+    #[test]
+    fn prompt_cursor_edits_at_position() {
+        let mut prompt = Prompt {
+            action: PromptAction::Search,
+            label: "Search",
+            value: "ab".to_string(),
+            cursor: 1,
+        };
+        prompt.insert('X');
+        assert_eq!(prompt.value, "aXb");
+        assert_eq!(prompt.cursor, 2);
+        prompt.delete_before();
+        assert_eq!(prompt.value, "ab");
+        assert_eq!(prompt.cursor, 1);
+        prompt.cursor = 0;
+        prompt.delete_before();
+        assert_eq!(prompt.value, "ab");
+    }
 
     #[test]
     fn auto_close_pairs_are_defined() {
