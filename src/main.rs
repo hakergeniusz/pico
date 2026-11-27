@@ -34,6 +34,7 @@ struct App {
     clipboard: String,
     editor_area: Rect,
     gutter_width: usize,
+    viewport: usize,
     message: String,
     quit_armed: bool,
 }
@@ -50,7 +51,8 @@ impl App {
             clipboard: String::new(),
             editor_area: Rect::new(0, 0, 0, 0),
             gutter_width: 1,
-            message: "Ctrl+S save | Ctrl+Z undo | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
+            viewport: 1,
+            message: "Ctrl+S save | Ctrl+Z undo | wheel scroll | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
             quit_armed: false,
         }
     }
@@ -140,7 +142,30 @@ impl App {
         }
     }
 
+    fn scroll_lines(&mut self, delta: isize) {
+        let max_scroll = self.buffer.lines.len().saturating_sub(self.viewport);
+        if delta < 0 {
+            self.scroll = self.scroll.saturating_sub(delta.unsigned_abs());
+        } else {
+            self.scroll = self.scroll.saturating_add(delta as usize).min(max_scroll);
+        }
+    }
+
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                self.scroll_lines(-3);
+                self.message = format!("scroll {}", self.scroll + 1);
+                return;
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_lines(3);
+                self.message = format!("scroll {}", self.scroll + 1);
+                return;
+            }
+            _ => {}
+        }
+
         let height = self.editor_area.height as usize;
         let view_row = match mouse.row.checked_sub(self.editor_area.y) {
             Some(value) => value as usize,
@@ -341,6 +366,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
     .areas(editor);
 
     let visible = text_area.height as usize;
+    app.viewport = visible;
     let selected_rows = app.normalized_selection();
 
     let gutter_lines: Vec<Line> = (app.scroll..app.scroll + visible)
@@ -398,7 +424,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
         status_area,
     );
 
-    if text_area.height > 0 && text_area.width > 0 {
+    if text_area.height > 0
+        && text_area.width > 0
+        && app.row >= app.scroll
+        && app.row < app.scroll + visible
+    {
         let x = text_area.x + (app.col as u16).min(text_area.right().saturating_sub(1));
         let y = text_area.y + (app.row - app.scroll) as u16;
         frame.set_cursor_position((x, y));
@@ -451,4 +481,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     terminal.show_cursor()?;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{App, Buffer};
+
+    #[test]
+    fn wheel_scroll_clamps_to_content() {
+        let mut app = App::new(Buffer::empty());
+        app.buffer.lines = vec![Vec::new(); 10];
+        app.viewport = 4;
+        app.scroll_lines(3);
+        assert_eq!(app.scroll, 3);
+        app.scroll_lines(3);
+        assert_eq!(app.scroll, 6);
+        app.scroll_lines(-2);
+        assert_eq!(app.scroll, 4);
+        app.scroll_lines(-100);
+        assert_eq!(app.scroll, 0);
+        app.scroll_lines(100);
+        assert_eq!(app.scroll, 6);
+    }
 }

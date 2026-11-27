@@ -33,6 +33,7 @@ pass one when you intend to save.
 | Tab | insert four spaces |
 | Ctrl+S | save |
 | Ctrl+Z | undo (last 200 edits) |
+| Mouse wheel | scroll three lines at a time |
 | Click a line number | highlight the entire line |
 | Drag across text | select a range of characters |
 | Ctrl+C | copy the selection |
