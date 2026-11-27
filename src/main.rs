@@ -617,7 +617,7 @@ impl App {
             (KeyCode::Char('h'), true) => {
                 self.open_prompt(PromptAction::ReplaceOne, "Replace with")
             }
-            (KeyCode::Char('q'), true) | (KeyCode::Esc, _) => {
+            (KeyCode::Char('q'), true) => {
                 if self.buffer.dirty {
                     self.open_prompt(PromptAction::ConfirmQuit, "Save changes? (y/n/esc)");
                     return true;

@@ -86,7 +86,7 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 | Ctrl+C | copy the selection |
 | Ctrl+V | paste from the editor's internal clipboard |
 | Left / Right / Home / End (in prompt) | move the input cursor |
-| Ctrl+Q / Esc | quit; with unsaved changes, asks `Save changes? (y/n/esc)` |
+| Ctrl+Q | quit; with unsaved changes, asks `Save changes? (y/n/esc)`; Esc only cancels prompts |
 
 ## Highlighting and auto-close
 
