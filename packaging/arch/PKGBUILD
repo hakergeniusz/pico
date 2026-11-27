@@ -1,0 +1,15 @@
+pkgname=pico
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Minimal terminal text editor inspired by Micro'
+arch=('x86_64' 'aarch64' 'riscv64')
+url='https://github.com/hakergeniusz/pico'
+license=('MIT')
+source=("pico-${pkgver}-${CARCH}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  install -Dm755 "$srcdir/pico" "$pkgdir/usr/bin/pico"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

@@ -1,4 +1,4 @@
-# micro-rs
+# pico
 
 A deliberately small terminal text editor in Rust, inspired by
 [Micro](https://github.com/micro-editor/micro). One file at a time, line numbers
@@ -14,11 +14,41 @@ This is the boring subset: open a file, type, save, quit.
 
 ```sh
 cargo build --release
-./target/release/micro-rs path/to/file.txt
+./target/release/pico path/to/file.txt
 ```
 
 With no path it starts with an empty untitled buffer; Ctrl+S needs a path, so
 pass one when you intend to save.
+
+## Install with a one-liner
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.sh | sh
+```
+
+The installer puts `pico` in `~/.local/bin` by default. Override with
+`PICO_INSTALL_DIR`, pin a release with `PICO_VERSION=0.1.0`, or point at a
+different asset host with `PICO_BASE_URL`. It verifies the SHA-256 checksum
+before installing. This repository is private, so unauthenticated downloads
+return 404; set `PICO_TOKEN` to a token with repository read access, or make the
+repository public.
+
+## Packages and release assets
+
+A tagged release (`v*`) is built by `.github/workflows/release.yml` and contains:
+
+| Artifact | Targets |
+|---|---|
+| standalone `.tar.gz` + `.sha256` | Linux x86_64, aarch64, riscv64; macOS x86_64, arm64; FreeBSD arm64 |
+| standalone `.zip` + `.sha256` | Windows x86_64 |
+| Debian `.deb` | amd64, arm64, riscv64 |
+| Fedora `.rpm` | x86_64, aarch64, riscv64 |
+| Arch `.pkg.tar.zst` | x86_64, aarch64, riscv64 |
+
+Local builders live in `scripts/`: `build-standalone.sh`, `build-deb.sh`
+(needs `dpkg-deb`), `build-rpm.sh` (needs `rpmbuild`), and `build-arch.sh`
+(needs `tar --zstd`). An Arch `PKGBUILD` template is in `packaging/arch/`.
+Targets other than Linux x86_64 are built in CI only and are not locally tested.
 
 ## Keys
 
@@ -63,5 +93,9 @@ internal clipboard, because OSC52 cannot read the system clipboard.
 cargo test
 ```
 
-Unit tests cover buffer edits and the open/save round trip, including a trailing
-newline.
+Unit tests cover buffer edits, selection, scroll clamping, scrollbar thumb
+bounds and the open/save round trip, including a trailing newline.
+
+## License
+
+MIT. See `LICENSE`.

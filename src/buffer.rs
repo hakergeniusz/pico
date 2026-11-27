@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn open_and_save_roundtrip_preserves_trailing_newline() {
         let path = std::env::temp_dir().join(format!(
-            "micro-rs-buffer-test-{}.txt",
+            "pico-buffer-test-{}.txt",
             std::process::id()
         ));
         std::fs::write(&path, "hello\nworld\n").unwrap();
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn selection_extracts_single_and_multiline_text() {
         let path = std::env::temp_dir().join(format!(
-            "micro-rs-selection-test-{}.txt",
+            "pico-selection-test-{}.txt",
             std::process::id()
         ));
         std::fs::write(&path, "hello\nworld").unwrap();

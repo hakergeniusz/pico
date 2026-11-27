@@ -638,15 +638,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "micro-rs"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "crossterm",
- "ratatui",
-]
-
-[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -911,6 +902,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
 dependencies = [
  "siphasher",
+]
+
+[[package]]
+name = "pico"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "crossterm",
+ "ratatui",
 ]
 
 [[package]]
