@@ -2,8 +2,9 @@
 
 A deliberately small terminal text editor in Rust, inspired by
 [Micro](https://github.com/micro-editor/micro). One file at a time, line numbers
-on the left, a scrollbar on the right, mouse highlighting, copy/paste, no command
-bar, no Lua config, no custom keybindings, no plugins.
+on the left, a scrollbar on the right, mouse highlighting, copy/paste, light
+syntax coloring, auto-closing brackets and quotes, no command bar, no Lua config,
+no custom keybindings, no plugins.
 
 ## Why
 
@@ -79,6 +80,19 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 | Ctrl+C | copy the selection |
 | Ctrl+V | paste from the editor's internal clipboard |
 | Ctrl+Q / Esc | quit; press twice if there are unsaved changes |
+
+## Highlighting and auto-close
+
+Selecting with the mouse only highlights text. The status line shows how many
+characters are selected and reminds you to press Ctrl+C; nothing is copied
+until you do. Brackets and quotes (`()`, `[]`, `{}`, `""`, `''`, `` `` ``) close
+automatically when typed, and typing a closing character over an existing one
+steps over it instead of inserting a duplicate.
+
+Syntax coloring is lightweight and heuristic: comments, strings, numbers and
+common keywords are colored, with a few language-specific keyword sets and
+basic Markdown styling. It is not a full parser and does not replace a real
+syntax plugin.
 
 ## Clipboard notes
 

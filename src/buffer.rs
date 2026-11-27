@@ -90,6 +90,10 @@ impl Buffer {
         self.lines.get(row).map_or(0, Vec::len)
     }
 
+    pub fn char_at(&self, row: usize, col: usize) -> Option<char> {
+        self.lines.get(row)?.get(col).copied()
+    }
+
     pub fn insert_char(&mut self, row: usize, col: usize, ch: char) {
         if let Some(line) = self.lines.get_mut(row) {
             let at = col.min(line.len());

@@ -1,4 +1,5 @@
 mod buffer;
+mod syntax;
 
 use base64::Engine;
 use buffer::{Buffer, Pos};
@@ -23,6 +24,22 @@ use std::time::Duration;
 
 const UNDO_LIMIT: usize = 200;
 const INDENT: &str = "    ";
+
+fn closing_pair(ch: char) -> Option<char> {
+    match ch {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        '"' => Some('"'),
+        '\'' => Some('\''),
+        '`' => Some('`'),
+        _ => None,
+    }
+}
+
+fn is_closing(ch: char) -> bool {
+    matches!(ch, ')' | ']' | '}' | '"' | '\'' | '`')
+}
 
 fn thumb_bounds(total: usize, viewport: usize, scroll: usize, track: usize) -> (usize, usize) {
     if total == 0 || viewport == 0 || track == 0 {
@@ -103,6 +120,13 @@ impl App {
 
     fn clear_selection(&mut self) {
         self.selection = None;
+    }
+
+    fn announce_selection(&mut self) {
+        if let Some((start, end)) = self.normalized_selection() {
+            let count = self.buffer.selected_text(start, end).chars().count();
+            self.message = format!("selected {count} chars (Ctrl+C to copy)");
+        }
     }
 
     fn copy_selection(&mut self) {
@@ -233,6 +257,7 @@ impl App {
                 self.row = row;
                 self.col = pos.col;
                 self.quit_armed = false;
+                self.announce_selection();
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 if let Some((anchor, _)) = self.selection {
@@ -244,6 +269,7 @@ impl App {
                     self.selection = Some((anchor, head));
                     self.row = pos.row;
                     self.col = pos.col;
+                    self.announce_selection();
                 }
             }
             _ => {}
@@ -285,8 +311,26 @@ impl App {
             }
             (KeyCode::Char(c), false) => {
                 self.snapshot();
-                self.buffer.insert_char(self.row, self.col, c);
-                self.col += 1;
+                if is_closing(c) && self.buffer.char_at(self.row, self.col) == Some(c) {
+                    self.col += 1;
+                } else if let Some(close) = closing_pair(c) {
+                    let apostrophe_ok = c != '\''
+                        || self.col == 0
+                        || self
+                            .buffer
+                            .char_at(self.row, self.col - 1)
+                            .map_or(true, |prev| !prev.is_alphanumeric() && prev != '\'');
+                    if apostrophe_ok {
+                        let pair = format!("{c}{close}");
+                        self.col = self.buffer.insert_str(self.row, self.col, &pair).saturating_sub(1);
+                    } else {
+                        self.buffer.insert_char(self.row, self.col, c);
+                        self.col += 1;
+                    }
+                } else {
+                    self.buffer.insert_char(self.row, self.col, c);
+                    self.col += 1;
+                }
                 self.clear_selection();
                 self.quit_armed = false;
             }
@@ -363,24 +407,43 @@ impl App {
     }
 }
 
-fn highlighted(line: &[char], selection: Option<(usize, usize)>) -> Line<'static> {
+fn highlighted(line: &[char], styles: &[Style], selection: Option<(usize, usize)>) -> Line<'static> {
     let len = line.len();
-    let Some((from, to)) = selection else {
-        return Line::from(line.iter().collect::<String>());
+    if len == 0 {
+        return Line::from(String::new());
+    }
+    let (from, to) = match selection {
+        Some((start, end)) => (start.min(len), end.min(len).max(start.min(len))),
+        None => (len, len),
     };
-    let from = from.min(len);
-    let to = to.min(len).max(from);
+
+    let style_at = |index: usize| {
+        let base = styles.get(index).copied().unwrap_or_default();
+        if (from..to).contains(&index) {
+            base.add_modifier(Modifier::REVERSED)
+        } else {
+            base
+        }
+    };
+
     let mut spans = Vec::new();
-    if from > 0 {
-        spans.push(Span::raw(line[..from].iter().collect::<String>()));
+    let mut start = 0;
+    let mut current = style_at(0);
+    for index in 1..len {
+        let style = style_at(index);
+        if style != current {
+            spans.push(Span::styled(
+                line[start..index].iter().collect::<String>(),
+                current,
+            ));
+            start = index;
+            current = style;
+        }
     }
     spans.push(Span::styled(
-        line[from..to].iter().collect::<String>(),
-        Style::default().add_modifier(Modifier::REVERSED),
+        line[start..len].iter().collect::<String>(),
+        current,
     ));
-    if to < len {
-        spans.push(Span::raw(line[to..].iter().collect::<String>()));
-    }
     Line::from(spans)
 }
 
@@ -403,24 +466,18 @@ fn draw(frame: &mut Frame, app: &mut App) {
 
     let visible = text_area.height as usize;
     app.viewport = visible;
-    let selected_rows = app.normalized_selection();
 
     let gutter_lines: Vec<Line> = (app.scroll..app.scroll + visible)
         .take_while(|row| *row < app.buffer.lines.len())
         .map(|row| {
-            let style = if selected_rows.is_some_and(|(start, end)| row >= start.row && row <= end.row)
-            {
-                Style::default().add_modifier(Modifier::REVERSED)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
             Line::from(Span::styled(
                 format!("{:>width$} ", row + 1, width = digits),
-                style,
+                Style::default().fg(Color::DarkGray),
             ))
         })
         .collect();
 
+    let ext = syntax::extension(app.buffer.path.as_deref());
     let text_lines: Vec<Line> = app
         .buffer
         .lines
@@ -430,7 +487,8 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .enumerate()
         .map(|(offset, line)| {
             let row = app.scroll + offset;
-            highlighted(line, app.selection_for_row(row, line.len()))
+            let styles = syntax::styles_for_line(line, &ext);
+            highlighted(line, &styles, app.selection_for_row(row, line.len()))
         })
         .collect();
 
@@ -536,7 +594,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{thumb_bounds, App, Buffer};
+    use super::{closing_pair, is_closing, thumb_bounds, App, Buffer};
+
+    #[test]
+    fn auto_close_pairs_are_defined() {
+        assert_eq!(closing_pair('('), Some(')'));
+        assert_eq!(closing_pair('{'), Some('}'));
+        assert_eq!(closing_pair('"'), Some('"'));
+        assert_eq!(closing_pair('a'), None);
+        assert!(is_closing(']'));
+        assert!(!is_closing('['));
+    }
 
     #[test]
     fn scrollbar_thumb_tracks_viewport() {
