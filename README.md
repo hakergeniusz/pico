@@ -71,8 +71,9 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 | Backspace | delete before cursor (joins lines at column 0) |
 | Delete | delete at cursor |
 | Tab | insert four spaces |
-| Ctrl+S | save |
+| Ctrl+S | save (with automatic backup and trailing newline) |
 | Ctrl+Z | undo (last 200 edits) |
+| Ctrl+R | restore the newest backup into the buffer |
 | Mouse wheel | scroll three lines at a time |
 | Click/drag the right scrollbar | jump to a position in the file |
 | Click a line number | highlight the entire line |
@@ -93,6 +94,22 @@ Syntax coloring is lightweight and heuristic: comments, strings, numbers and
 common keywords are colored, with a few language-specific keyword sets and
 basic Markdown styling. It is not a full parser and does not replace a real
 syntax plugin.
+
+## Backups and EOF newline
+
+Before every save of an existing file, pico copies the current on-disk version
+to `$XDG_DATA_HOME/pico/backups/<hash>/` (or `~/.local/share/pico/backups/` when
+`XDG_DATA_HOME` is unset). The ten newest timestamped copies are kept per file,
+alongside a `path.txt` marker. If the backup fails, the save is aborted so the
+last good copy is never overwritten blindly. First saves of new files do not
+need a backup.
+
+Ctrl+R loads the newest backup into the buffer for the current file. It does
+not write anything by itself: review the buffer and press Ctrl+S to keep it.
+Ctrl+Z undoes a restore.
+
+Saves also add a trailing newline when the file does not already have one.
+Empty files stay empty.
 
 ## Clipboard notes
 

@@ -1,3 +1,4 @@
+mod backup;
 mod buffer;
 mod syntax;
 
@@ -83,7 +84,7 @@ impl App {
             scrollbar_area: Rect::new(0, 0, 0, 0),
             gutter_width: 1,
             viewport: 1,
-            message: "Ctrl+S save | Ctrl+Z undo | wheel scroll | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
+            message: "Ctrl+S save | Ctrl+Z undo | Ctrl+R restore | wheel scroll | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
             quit_armed: false,
         }
     }
@@ -161,6 +162,34 @@ impl App {
         self.clear_selection();
         self.message = "pasted".to_string();
         self.quit_armed = false;
+    }
+
+    fn restore_backup(&mut self) {
+        let Some(path) = self.buffer.path.clone() else {
+            self.message = "no file path".to_string();
+            return;
+        };
+        match backup::latest(&path) {
+            Ok(Some(backup_path)) => match std::fs::read_to_string(&backup_path) {
+                Ok(text) => {
+                    self.snapshot();
+                    self.buffer = Buffer::from_text(text, path);
+                    self.row = 0;
+                    self.col = 0;
+                    self.scroll = 0;
+                    self.clear_selection();
+                    let name = backup_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("backup");
+                    self.message = format!("restored {name}, Ctrl+S to keep it");
+                    self.quit_armed = false;
+                }
+                Err(error) => self.message = format!("restore failed: {error}"),
+            },
+            Ok(None) => self.message = "no backups found".to_string(),
+            Err(error) => self.message = format!("backup lookup failed: {error}"),
+        }
     }
 
     fn clamp(&mut self) {
@@ -284,10 +313,27 @@ impl App {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
 
         match (key.code, control) {
-            (KeyCode::Char('s'), true) => match self.buffer.save() {
-                Ok(()) => self.message = "saved".to_string(),
-                Err(error) => self.message = format!("save failed: {error}"),
-            },
+            (KeyCode::Char('s'), true) => {
+                let backup_result = match self.buffer.path.as_ref() {
+                    Some(path) => backup::before_save(path),
+                    None => Ok(PathBuf::new()),
+                };
+                match backup_result {
+                    Ok(_) => match self.buffer.save() {
+                        Ok(()) => self.message = "saved".to_string(),
+                        Err(error) => self.message = format!("save failed: {error}"),
+                    },
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        match self.buffer.save() {
+                            Ok(()) => self.message = "saved".to_string(),
+                            Err(error) => self.message = format!("save failed: {error}"),
+                        }
+                    }
+                    Err(error) => {
+                        self.message = format!("backup failed: {error}; not saved")
+                    }
+                }
+            }
             (KeyCode::Char('z'), true) => {
                 if let Some((buffer, row, col)) = self.undo.pop() {
                     self.buffer = buffer;
@@ -301,6 +347,7 @@ impl App {
             }
             (KeyCode::Char('c'), true) => self.copy_selection(),
             (KeyCode::Char('v'), true) => self.paste(),
+            (KeyCode::Char('r'), true) => self.restore_backup(),
             (KeyCode::Char('q'), true) | (KeyCode::Esc, _) => {
                 if self.buffer.dirty && !self.quit_armed {
                     self.quit_armed = true;

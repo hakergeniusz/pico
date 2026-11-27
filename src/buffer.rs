@@ -39,25 +39,29 @@ impl Buffer {
         }
     }
 
+    pub fn from_text(text: String, path: PathBuf) -> Self {
+        let trailing_newline = text.ends_with('\n');
+        let mut lines: Vec<Vec<char>> = text
+            .split('\n')
+            .map(|line| line.chars().collect())
+            .collect();
+        if trailing_newline {
+            lines.pop();
+        }
+        if lines.is_empty() {
+            lines.push(Vec::new());
+        }
+        Self {
+            lines,
+            path: Some(path),
+            dirty: false,
+            trailing_newline,
+        }
+    }
+
     pub fn open(path: PathBuf) -> io::Result<Self> {
         match fs::read_to_string(&path) {
-            Ok(text) => {
-                let trailing_newline = text.ends_with('\n');
-                let mut lines: Vec<Vec<char>> =
-                    text.split('\n').map(|line| line.chars().collect()).collect();
-                if trailing_newline {
-                    lines.pop();
-                }
-                if lines.is_empty() {
-                    lines.push(Vec::new());
-                }
-                Ok(Self {
-                    lines,
-                    path: Some(path),
-                    dirty: false,
-                    trailing_newline,
-                })
-            }
+            Ok(text) => Ok(Self::from_text(text, path)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Self::new(path)),
             Err(error) => Err(error),
         }
@@ -67,6 +71,9 @@ impl Buffer {
         let path = self.path.clone().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "no file path to save to")
         })?;
+        if self.lines.len() > 1 || self.lines.first().is_some_and(|line| !line.is_empty()) {
+            self.trailing_newline = true;
+        }
         fs::write(path, self.as_text())?;
         self.dirty = false;
         Ok(())
@@ -267,6 +274,21 @@ mod tests {
             buffer.selected_text(Pos::new(0, 0), Pos::new(1, 5)),
             "hello\nworld"
         );
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn save_appends_trailing_newline() {
+        let path = std::env::temp_dir().join(format!("pico-eof-test-{}.txt", std::process::id()));
+        std::fs::write(&path, "no newline").unwrap();
+        let mut buffer = Buffer::open(path.clone()).unwrap();
+        buffer.save().unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "no newline\n");
+
+        std::fs::write(&path, "").unwrap();
+        let mut empty = Buffer::open(path.clone()).unwrap();
+        empty.save().unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
         std::fs::remove_file(&path).unwrap();
     }
 
