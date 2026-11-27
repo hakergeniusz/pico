@@ -106,7 +106,9 @@ need a backup.
 
 Ctrl+R loads the newest backup into the buffer for the current file. It does
 not write anything by itself: review the buffer and press Ctrl+S to keep it.
-Ctrl+Z undoes a restore.
+Ctrl+Z undoes a restore. If the on-disk file is so damaged that pico cannot
+open it as UTF-8, move it aside, create an empty file with the same name, open
+that, then press Ctrl+R to pull the last good copy back.
 
 Saves also add a trailing newline when the file does not already have one.
 Empty files stay empty.
