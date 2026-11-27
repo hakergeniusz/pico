@@ -286,6 +286,27 @@ impl App {
     fn handle_prompt_key(&mut self, key: KeyEvent) -> bool {
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let live_search = self
+            .prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.action == PromptAction::Search);
+
+        if live_search && (key.code == KeyCode::F(3) || key.code == KeyCode::BackTab) {
+            self.next_match(if shift || key.code == KeyCode::BackTab {
+                -1
+            } else {
+                1
+            });
+            if !self.matches.is_empty() {
+                self.message = format!(
+                    "match {}/{} (live)",
+                    self.current_match + 1,
+                    self.matches.len()
+                );
+            }
+            return true;
+        }
 
         if self
             .prompt

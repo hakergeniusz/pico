@@ -108,8 +108,9 @@ Ctrl+F turns the status line into a search field. Searching is live: typing
 its target before you press Enter. Left/Right move the input cursor, Home/End
 jump to the ends, and Backspace deletes before it. All matches are underlined,
 the current one gets a yellow background, and the status shows which match you
-are on. Enter accepts the query; F3 and Shift+F3 move through matches and
-wrap around; Shift+Tab is an alias for the previous match because modified
+are on. Enter accepts the query. F3 and Shift+F3 move through matches while the search is still live
+(the prompt stays open), and they wrap around. Shift+Tab is an alias for the
+previous match because modified
 function keys vary between terminals. Picking "the next one" is explicit instead
 of hidden in Micro's command flow. Search is case-insensitive by default; press Alt+C while the
 prompt is open to toggle exact case. Esc exits search mode and clears the
