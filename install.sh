@@ -42,7 +42,7 @@ tag=${PICO_VERSION:-}
 if [ -z "$tag" ]; then
   tag=$(fetch "https://api.github.com/repos/$repo/releases/latest" |
     sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-  [ -n "$tag" ] || die "could not determine the latest release tag"
+  [ -n "$tag" ] || die "no releases found for $repo; publish a v* release or set PICO_VERSION"
 fi
 version=${tag#v}
 
