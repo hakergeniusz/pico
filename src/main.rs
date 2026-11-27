@@ -318,8 +318,17 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
+                let was_search = self
+                    .prompt
+                    .as_ref()
+                    .is_some_and(|prompt| prompt.action == PromptAction::Search);
                 self.prompt = None;
-                self.message = "prompt cancelled".to_string();
+                if was_search {
+                    self.clear_search();
+                    self.message = "search closed".to_string();
+                } else {
+                    self.message = "prompt cancelled".to_string();
+                }
                 return true;
             }
             KeyCode::Enter => {
@@ -332,45 +341,64 @@ impl App {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.delete_before();
                 }
-                return true;
             }
             KeyCode::Left => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.cursor = prompt.cursor.saturating_sub(1);
                 }
-                return true;
             }
             KeyCode::Right => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.cursor = (prompt.cursor + 1).min(prompt.len());
                 }
-                return true;
             }
             KeyCode::Home => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.cursor = 0;
                 }
-                return true;
             }
             KeyCode::End => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.cursor = prompt.len();
                 }
-                return true;
             }
             KeyCode::Char('c') if alt => {
                 self.case_sensitive = !self.case_sensitive;
-                return true;
             }
             KeyCode::Char(c) if !control => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     prompt.insert(c);
                 }
-                return true;
             }
             _ => {}
         }
+        if self
+            .prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.action == PromptAction::Search)
+        {
+            let query = self.prompt.as_ref().map(|p| p.value.clone()).unwrap_or_default();
+            self.apply_live_search(&query);
+        }
         true
+    }
+
+    fn clear_search(&mut self) {
+        self.search_query.clear();
+        self.matches.clear();
+        self.current_match = 0;
+    }
+
+    fn apply_live_search(&mut self, query: &str) {
+        self.search_query = query.to_string();
+        self.recompute_matches();
+        if self.matches.is_empty() {
+            self.message = format!("no matches for '{query}'");
+        } else {
+            self.current_match = 0;
+            self.goto_match(0);
+            self.message = format!("match 1/{} (live)", self.matches.len());
+        }
     }
 
     fn accept_prompt(&mut self, prompt: Prompt) {
@@ -625,6 +653,12 @@ impl App {
                 self.should_quit = true;
                 return false;
             }
+            (KeyCode::Esc, _) => {
+                if !self.search_query.is_empty() {
+                    self.clear_search();
+                    self.message = "search closed".to_string();
+                }
+            }
             (KeyCode::Char(c), false) => {
                 self.snapshot();
                 if is_closing(c) && self.buffer.char_at(self.row, self.col) == Some(c) {
@@ -862,8 +896,8 @@ fn draw(frame: &mut Frame, app: &mut App) {
         Some(prompt) => {
             let case = if app.case_sensitive { "Aa" } else { "aa" };
             format!(
-                " {}: {}  [{}]  Enter ok | Esc cancel | Alt+C case",
-                prompt.label, prompt.value, case
+                " {}: {}  [{}]  {}  Enter ok | Esc close | Alt+C case",
+                prompt.label, prompt.value, case, app.message
             )
         }
         None => format!(
@@ -954,6 +988,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::{closing_pair, is_closing, thumb_bounds, App, Buffer, Prompt, PromptAction};
+    use std::path::PathBuf;
+
+    #[test]
+    fn live_search_updates_matches_and_clear_exits() {
+        let mut app = App::new(Buffer::from_text(
+            "linux guide".to_string(),
+            PathBuf::from("x.txt"),
+        ));
+        app.viewport = 10;
+        app.apply_live_search("lin");
+        assert_eq!(app.search_query, "lin");
+        assert_eq!(app.matches.len(), 1);
+        assert_eq!((app.row, app.col), (0, 0));
+        app.clear_search();
+        assert!(app.matches.is_empty());
+        assert!(app.search_query.is_empty());
+    }
 
     #[test]
     fn prompt_cursor_edits_at_position() {

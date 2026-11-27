@@ -103,20 +103,22 @@ syntax plugin.
 
 ## Search and replace
 
-Ctrl+F turns the status line into a search field. Left/Right move the input
-cursor, Home/End jump to the ends, Backspace deletes before it, and Enter
-accepts. Type a string and press Enter;
-all matches are underlined, the current one gets a yellow background, and the
-status shows which match you are on. F3 and Shift+F3 move through matches and
+Ctrl+F turns the status line into a search field. Searching is live: typing
+`lin` immediately jumps to the first match for `lin`, so a partial word finds
+its target before you press Enter. Left/Right move the input cursor, Home/End
+jump to the ends, and Backspace deletes before it. All matches are underlined,
+the current one gets a yellow background, and the status shows which match you
+are on. Enter accepts the query; F3 and Shift+F3 move through matches and
 wrap around; Shift+Tab is an alias for the previous match because modified
 function keys vary between terminals. Picking "the next one" is explicit instead
 of hidden in Micro's command flow. Search is case-insensitive by default; press Alt+C while the
-prompt is open to toggle exact case. Esc cancels.
+prompt is open to toggle exact case. Esc exits search mode and clears the
+highlights; in other prompts it just cancels.
 
 Ctrl+H prompts for a replacement string and changes only the current match;
 Ctrl+Alt+H replaces every match. Both keep the last cursor position sensible and
-are undoable with Ctrl+Z. The search string itself stays active until the next
-Ctrl+F.
+are undoable with Ctrl+Z. The live query stays active until the next Ctrl+F or
+until Esc exits search mode.
 
 ## Backups and EOF newline
 
