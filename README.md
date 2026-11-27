@@ -2,8 +2,8 @@
 
 A deliberately small terminal text editor in Rust, inspired by
 [Micro](https://github.com/micro-editor/micro). One file at a time, line numbers
-on the left, mouse highlighting, copy/paste, no command bar, no Lua config, no
-custom keybindings, no plugins.
+on the left, a scrollbar on the right, mouse highlighting, copy/paste, no command
+bar, no Lua config, no custom keybindings, no plugins.
 
 ## Why
 
@@ -34,6 +34,7 @@ pass one when you intend to save.
 | Ctrl+S | save |
 | Ctrl+Z | undo (last 200 edits) |
 | Mouse wheel | scroll three lines at a time |
+| Click/drag the right scrollbar | jump to a position in the file |
 | Click a line number | highlight the entire line |
 | Drag across text | select a range of characters |
 | Ctrl+C | copy the selection |

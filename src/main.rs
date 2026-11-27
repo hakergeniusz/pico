@@ -24,6 +24,18 @@ use std::time::Duration;
 const UNDO_LIMIT: usize = 200;
 const INDENT: &str = "    ";
 
+fn thumb_bounds(total: usize, viewport: usize, scroll: usize, track: usize) -> (usize, usize) {
+    if total == 0 || viewport == 0 || track == 0 {
+        return (0, 0);
+    }
+    if total <= viewport {
+        return (0, track);
+    }
+    let size = ((viewport * track) / total).max(1).min(track);
+    let start = ((scroll * track) / total).min(track - size);
+    (start, size)
+}
+
 struct App {
     buffer: Buffer,
     row: usize,
@@ -33,6 +45,7 @@ struct App {
     selection: Option<(Pos, Pos)>,
     clipboard: String,
     editor_area: Rect,
+    scrollbar_area: Rect,
     gutter_width: usize,
     viewport: usize,
     message: String,
@@ -50,6 +63,7 @@ impl App {
             selection: None,
             clipboard: String::new(),
             editor_area: Rect::new(0, 0, 0, 0),
+            scrollbar_area: Rect::new(0, 0, 0, 0),
             gutter_width: 1,
             viewport: 1,
             message: "Ctrl+S save | Ctrl+Z undo | wheel scroll | click number / drag select | Ctrl+C copy | Ctrl+V paste | Ctrl+Q quit".to_string(),
@@ -174,13 +188,33 @@ impl App {
         if view_row >= height {
             return;
         }
+
+        let gutter_end = self.editor_area.x + self.gutter_width as u16;
+        let in_gutter = mouse.column >= self.editor_area.x && mouse.column < gutter_end;
+        let in_scrollbar = mouse.column >= self.scrollbar_area.x
+            && mouse.column < self.scrollbar_area.x + self.scrollbar_area.width;
+
+        if in_scrollbar {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left)
+                | MouseEventKind::Drag(MouseButton::Left) => {
+                    let track = self.scrollbar_area.height as usize;
+                    if track > 0 {
+                        let total = self.buffer.lines.len();
+                        let max_scroll = total.saturating_sub(self.viewport);
+                        self.scroll = ((view_row * total) / track).min(max_scroll);
+                        self.message = format!("scroll {}", self.scroll + 1);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         let row = self.scroll + view_row;
         if row >= self.buffer.lines.len() {
             return;
         }
-
-        let gutter_end = self.editor_area.x + self.gutter_width as u16;
-        let in_gutter = mouse.column >= self.editor_area.x && mouse.column < gutter_end;
         let pos = if in_gutter {
             Pos::new(row, 0)
         } else {
@@ -359,11 +393,13 @@ fn draw(frame: &mut Frame, app: &mut App) {
     let gutter_width = digits + 1;
     app.gutter_width = gutter_width;
     app.editor_area = editor;
-    let [gutter_area, text_area] = Layout::horizontal([
+    let [gutter_area, text_area, scrollbar_area] = Layout::horizontal([
         Constraint::Length(gutter_width as u16),
         Constraint::Min(1),
+        Constraint::Length(1),
     ])
     .areas(editor);
+    app.scrollbar_area = scrollbar_area;
 
     let visible = text_area.height as usize;
     app.viewport = visible;
@@ -398,8 +434,23 @@ fn draw(frame: &mut Frame, app: &mut App) {
         })
         .collect();
 
+    let track = scrollbar_area.height as usize;
+    let (thumb_start, thumb_size) =
+        thumb_bounds(app.buffer.lines.len(), visible, app.scroll, track);
+    let scrollbar_lines: Vec<Line> = (0..track)
+        .map(|row| {
+            let (glyph, style) = if row >= thumb_start && row < thumb_start + thumb_size {
+                ("█", Style::default().fg(Color::Cyan))
+            } else {
+                ("│", Style::default().fg(Color::DarkGray))
+            };
+            Line::from(Span::styled(glyph, style))
+        })
+        .collect();
+
     frame.render_widget(Paragraph::new(gutter_lines), gutter_area);
     frame.render_widget(Paragraph::new(text_lines), text_area);
+    frame.render_widget(Paragraph::new(scrollbar_lines), scrollbar_area);
 
     let name = app
         .buffer
@@ -485,7 +536,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, Buffer};
+    use super::{thumb_bounds, App, Buffer};
+
+    #[test]
+    fn scrollbar_thumb_tracks_viewport() {
+        assert_eq!(thumb_bounds(20, 9, 0, 9), (0, 4));
+        assert_eq!(thumb_bounds(20, 9, 11, 9), (4, 4));
+        assert_eq!(thumb_bounds(5, 9, 0, 9), (0, 9));
+        assert_eq!(thumb_bounds(20, 0, 0, 9), (0, 0));
+    }
 
     #[test]
     fn wheel_scroll_clamps_to_content() {
