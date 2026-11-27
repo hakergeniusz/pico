@@ -29,9 +29,18 @@ curl -fsSL https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor
 The installer puts `pico` in `~/.local/bin` by default. Override with
 `PICO_INSTALL_DIR`, pin a release with `PICO_VERSION=0.1.0`, or point at a
 different asset host with `PICO_BASE_URL`. It verifies the SHA-256 checksum
-before installing. This repository is private, so unauthenticated downloads
-return 404; set `PICO_TOKEN` to a token with repository read access, or make the
-repository public.
+before installing. `PICO_TOKEN` is only needed for private forks.
+
+On Windows, use PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/hakergeniusz/pico/feat/basic-editor/install.ps1 | iex
+```
+
+`install.ps1` installs `pico.exe` to `$env:LOCALAPPDATA\pico\bin` by default.
+Pass `-Version`, `-InstallDir`, `-BaseUrl`, or `-Token` (environment variables
+`PICO_VERSION`, `PICO_INSTALL_DIR`, `PICO_BASE_URL`, `PICO_TOKEN` also work).
+It verifies the SHA-256 checksum before extracting the zip.
 
 ## Packages and release assets
 
