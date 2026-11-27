@@ -1,8 +1,9 @@
 # micro-rs
 
 A deliberately small terminal text editor in Rust, inspired by
-[Micro](https://github.com/micro-editor/micro). One file at a time, no command
-bar, no Lua config, no custom keybindings, no plugins.
+[Micro](https://github.com/micro-editor/micro). One file at a time, line numbers
+on the left, mouse highlighting, copy/paste, no command bar, no Lua config, no
+custom keybindings, no plugins.
 
 ## Why
 
@@ -32,13 +33,26 @@ pass one when you intend to save.
 | Tab | insert four spaces |
 | Ctrl+S | save |
 | Ctrl+Z | undo (last 200 edits) |
+| Click a line number | highlight the entire line |
+| Drag across text | select a range of characters |
+| Ctrl+C | copy the selection |
+| Ctrl+V | paste from the editor's internal clipboard |
 | Ctrl+Q / Esc | quit; press twice if there are unsaved changes |
+
+## Clipboard notes
+
+Ctrl+C writes the selection to the terminal clipboard with an OSC52 escape
+sequence, so terminals that support OSC52 (including many SSH setups) can paste
+it into other apps. In tmux you may need `set -g allow-passthrough on` for the
+sequence to reach the outer terminal. Ctrl+V pastes from the editor's own
+internal clipboard, because OSC52 cannot read the system clipboard.
 
 ## Limits
 
 - One file per process, no open/save-as prompts, no command bar.
 - Undo is a bounded snapshot stack, not a proper edit tree. No redo.
-- No syntax highlighting, search, split panes, mouse, or clipboard integration.
+- No syntax highlighting, search, split panes, cut, or double-click word selection.
+- Editing while text is selected clears the selection instead of replacing it.
 - Very long lines are clipped to the terminal width; horizontal scrolling is not implemented.
 
 ## Tests

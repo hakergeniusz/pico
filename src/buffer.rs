@@ -2,6 +2,18 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Pos {
+    pub row: usize,
+    pub col: usize,
+}
+
+impl Pos {
+    pub fn new(row: usize, col: usize) -> Self {
+        Self { row, col }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Buffer {
     pub lines: Vec<Vec<char>>,
@@ -144,11 +156,56 @@ impl Buffer {
         self.dirty = true;
         Some((row + 1, 0))
     }
+
+    pub fn selected_text(&self, start: Pos, end: Pos) -> String {
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let mut text = String::new();
+        for row in start.row..=end.row {
+            let line = self.lines.get(row).map(Vec::as_slice).unwrap_or(&[]);
+            let from = if row == start.row {
+                start.col.min(line.len())
+            } else {
+                0
+            };
+            let to = if row == end.row {
+                end.col.min(line.len())
+            } else {
+                line.len()
+            };
+            if from < to {
+                text.extend(line[from..to].iter());
+            }
+            if row < end.row {
+                text.push('\n');
+            }
+        }
+        text
+    }
+
+    pub fn insert_text(&mut self, row: usize, col: usize, text: &str) -> (usize, usize) {
+        let mut row = row;
+        let mut col = col;
+        let mut parts = text.split('\n').peekable();
+        while let Some(part) = parts.next() {
+            col = self.insert_str(row, col, part);
+            if parts.peek().is_some() {
+                if let Some((next_row, next_col)) = self.split_line(row, col) {
+                    row = next_row;
+                    col = next_col;
+                }
+            }
+        }
+        (row, col)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Buffer;
+    use super::{Buffer, Pos};
 
     #[test]
     fn insert_and_delete_before() {
@@ -188,5 +245,31 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\nworld!\n");
         assert!(!buffer.dirty);
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn selection_extracts_single_and_multiline_text() {
+        let path = std::env::temp_dir().join(format!(
+            "micro-rs-selection-test-{}.txt",
+            std::process::id()
+        ));
+        std::fs::write(&path, "hello\nworld").unwrap();
+        let buffer = Buffer::open(path.clone()).unwrap();
+        assert_eq!(
+            buffer.selected_text(Pos::new(0, 2), Pos::new(0, 5)),
+            "llo"
+        );
+        assert_eq!(
+            buffer.selected_text(Pos::new(0, 0), Pos::new(1, 5)),
+            "hello\nworld"
+        );
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn insert_text_handles_newlines() {
+        let mut buffer = Buffer::empty();
+        assert_eq!(buffer.insert_text(0, 0, "one\ntwo"), (1, 3));
+        assert_eq!(buffer.as_text(), "one\ntwo");
     }
 }
