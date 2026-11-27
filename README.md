@@ -64,13 +64,15 @@ Targets other than Linux x86_64 are built in CI only and are not locally tested.
 
 | Key | Action |
 |---|---|
-| arrows | move cursor |
+| arrows | move cursor; horizontal view follows long lines |
+| Ctrl+Left / Ctrl+Right | jump to previous / next word |
 | Home / End | start / end of line |
 | PageUp / PageDown | move by screenful |
 | Enter | split line |
 | Backspace | delete before cursor (joins lines at column 0) |
 | Delete | delete at cursor |
 | Tab | insert four spaces |
+| Ctrl+N | toggle line numbers off/on |
 | Ctrl+S | save (with automatic backup and trailing newline) |
 | Ctrl+F | search; type in the status line, Enter to accept |
 | F3 / Shift+F3 (or Shift+Tab) | next / previous match |
@@ -153,7 +155,9 @@ internal clipboard, because OSC52 cannot read the system clipboard.
 - Undo is a bounded snapshot stack, not a proper edit tree. No redo.
 - No syntax highlighting, search, split panes, cut, or double-click word selection.
 - Editing while text is selected clears the selection instead of replacing it.
-- Very long lines are clipped to the terminal width; horizontal scrolling is not implemented.
+- Very long lines scroll horizontally as the cursor moves; there is no horizontal scrollbar.
+- Dragging the right scrollbar keeps scrolling even if the pointer wanders over the text; release the mouse to end the drag.
+- Ctrl+N hides the line-number gutter, which is handy when selecting text over SSH.
 
 ## Tests
 

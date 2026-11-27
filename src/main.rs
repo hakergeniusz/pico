@@ -42,6 +42,32 @@ fn is_closing(ch: char) -> bool {
     matches!(ch, ')' | ']' | '}' | '"' | '\'' | '`')
 }
 
+fn is_word_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+fn previous_word_col(line: &[char], col: usize) -> usize {
+    let mut index = col.min(line.len());
+    while index > 0 && !is_word_char(line[index - 1]) {
+        index -= 1;
+    }
+    while index > 0 && is_word_char(line[index - 1]) {
+        index -= 1;
+    }
+    index
+}
+
+fn next_word_col(line: &[char], col: usize) -> usize {
+    let mut index = col.min(line.len());
+    while index < line.len() && !is_word_char(line[index]) {
+        index += 1;
+    }
+    while index < line.len() && is_word_char(line[index]) {
+        index += 1;
+    }
+    index
+}
+
 fn thumb_bounds(total: usize, viewport: usize, scroll: usize, track: usize) -> (usize, usize) {
     if total == 0 || viewport == 0 || track == 0 {
         return (0, 0);
@@ -105,7 +131,11 @@ struct App {
     editor_area: Rect,
     scrollbar_area: Rect,
     gutter_width: usize,
+    show_line_numbers: bool,
+    scrollbar_dragging: bool,
+    hscroll: usize,
     viewport: usize,
+    view_width: usize,
     prompt: Option<Prompt>,
     search_query: String,
     matches: Vec<(Pos, Pos)>,
@@ -128,7 +158,11 @@ impl App {
             editor_area: Rect::new(0, 0, 0, 0),
             scrollbar_area: Rect::new(0, 0, 0, 0),
             gutter_width: 1,
+            show_line_numbers: true,
+            scrollbar_dragging: false,
+            hscroll: 0,
             viewport: 1,
+            view_width: 1,
             prompt: None,
             search_query: String::new(),
             matches: Vec::new(),
@@ -505,9 +539,20 @@ impl App {
         self.message = format!("replaced {count} matches");
     }
 
+    fn ensure_horizontal_visible(&mut self) {
+        let width = self.view_width.max(1);
+        if self.col < self.hscroll {
+            self.hscroll = self.col;
+        }
+        if self.col >= self.hscroll + width {
+            self.hscroll = self.col - width + 1;
+        }
+    }
+
     fn clamp(&mut self) {
         let len = self.buffer.line_len(self.row);
         self.col = self.col.min(len);
+        self.ensure_horizontal_visible();
     }
 
     fn ensure_visible(&mut self, viewport: usize) {
@@ -531,6 +576,17 @@ impl App {
         }
     }
 
+    fn scrollbar_jump(&mut self, view_row: usize) {
+        let track = self.scrollbar_area.height as usize;
+        if track == 0 {
+            return;
+        }
+        let total = self.buffer.lines.len();
+        let max_scroll = total.saturating_sub(self.viewport);
+        self.scroll = ((view_row * total) / track).min(max_scroll);
+        self.message = format!("scroll {}", self.scroll + 1);
+    }
+
     fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
@@ -546,12 +602,22 @@ impl App {
             _ => {}
         }
 
+        if self.scrollbar_dragging && matches!(mouse.kind, MouseEventKind::Up(_)) {
+            self.scrollbar_dragging = false;
+            return;
+        }
+
         let height = self.editor_area.height as usize;
         let view_row = match mouse.row.checked_sub(self.editor_area.y) {
             Some(value) => value as usize,
             None => return,
         };
         if view_row >= height {
+            return;
+        }
+
+        if self.scrollbar_dragging && matches!(mouse.kind, MouseEventKind::Drag(_)) {
+            self.scrollbar_jump(view_row);
             return;
         }
 
@@ -562,16 +628,11 @@ impl App {
 
         if in_scrollbar {
             match mouse.kind {
-                MouseEventKind::Down(MouseButton::Left)
-                | MouseEventKind::Drag(MouseButton::Left) => {
-                    let track = self.scrollbar_area.height as usize;
-                    if track > 0 {
-                        let total = self.buffer.lines.len();
-                        let max_scroll = total.saturating_sub(self.viewport);
-                        self.scroll = ((view_row * total) / track).min(max_scroll);
-                        self.message = format!("scroll {}", self.scroll + 1);
-                    }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.scrollbar_dragging = true;
+                    self.scrollbar_jump(view_row);
                 }
+                MouseEventKind::Drag(MouseButton::Left) => self.scrollbar_jump(view_row),
                 _ => {}
             }
             return;
@@ -584,12 +645,13 @@ impl App {
         let pos = if in_gutter {
             Pos::new(row, 0)
         } else {
-            let col = mouse.column.saturating_sub(gutter_end) as usize;
+            let col = mouse.column.saturating_sub(gutter_end) as usize + self.hscroll;
             Pos::new(row, col.min(self.buffer.line_len(row)))
         };
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
+                self.scrollbar_dragging = false;
                 let head = if in_gutter {
                     Pos::new(row + 1, 0)
                 } else {
@@ -660,6 +722,14 @@ impl App {
             (KeyCode::Char('c'), true) => self.copy_selection(),
             (KeyCode::Char('v'), true) => self.paste(),
             (KeyCode::Char('r'), true) => self.restore_backup(),
+            (KeyCode::Char('n'), true) => {
+                self.show_line_numbers = !self.show_line_numbers;
+                self.message = if self.show_line_numbers {
+                    "line numbers on".to_string()
+                } else {
+                    "line numbers off".to_string()
+                };
+            }
             (KeyCode::Char('f'), true) => {
                 self.open_prompt(PromptAction::Search, "Search")
             }
@@ -730,6 +800,16 @@ impl App {
                 self.buffer.delete_at(self.row, self.col);
                 self.clear_selection();
                     }
+            (KeyCode::Left, true) => {
+                let line = self.buffer.lines.get(self.row).map(Vec::as_slice).unwrap_or(&[]);
+                self.col = previous_word_col(line, self.col);
+                self.clear_selection();
+            }
+            (KeyCode::Right, true) => {
+                let line = self.buffer.lines.get(self.row).map(Vec::as_slice).unwrap_or(&[]);
+                self.col = next_word_col(line, self.col);
+                self.clear_selection();
+            }
             (KeyCode::Left, _) => {
                 self.col = self.col.saturating_sub(1);
                 self.clear_selection();
@@ -834,19 +914,30 @@ fn draw(frame: &mut Frame, app: &mut App) {
         Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
     let digits = app.buffer.lines.len().max(1).to_string().len();
-    let gutter_width = digits + 1;
+    let gutter_width = if app.show_line_numbers { digits + 1 } else { 0 };
     app.gutter_width = gutter_width;
     app.editor_area = editor;
-    let [gutter_area, text_area, scrollbar_area] = Layout::horizontal([
-        Constraint::Length(gutter_width as u16),
-        Constraint::Min(1),
-        Constraint::Length(1),
-    ])
-    .areas(editor);
+    let (gutter_area, text_area, scrollbar_area) = if app.show_line_numbers {
+        let [gutter, text, bar] = Layout::horizontal([
+            Constraint::Length(gutter_width as u16),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .areas(editor);
+        (gutter, text, bar)
+    } else {
+        let [text, bar] = Layout::horizontal([
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .areas(editor);
+        (Rect::new(editor.x, editor.y, 0, editor.height), text, bar)
+    };
     app.scrollbar_area = scrollbar_area;
 
     let visible = text_area.height as usize;
     app.viewport = visible;
+    app.view_width = text_area.width as usize;
 
     let gutter_lines: Vec<Line> = (app.scroll..app.scroll + visible)
         .take_while(|row| *row < app.buffer.lines.len())
@@ -869,19 +960,40 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .map(|(offset, line)| {
             let row = app.scroll + offset;
             let styles = syntax::styles_for_line(line, &ext);
+            let width = app.view_width.max(1);
+            let hscroll = app.hscroll.min(line.len());
+            let shown: Vec<char> = line.iter().skip(hscroll).take(width).copied().collect();
+            let shown_styles: Vec<Style> = styles
+                .iter()
+                .skip(hscroll)
+                .take(width)
+                .copied()
+                .collect();
             let row_matches: Vec<(usize, usize, bool)> = app
                 .matches
                 .iter()
                 .enumerate()
                 .filter(|(_, (start, end))| start.row == row && end.row == row)
-                .map(|(index, (start, end))| (start.col, end.col, index == app.current_match))
+                .filter_map(|(index, (start, end))| {
+                    let from = start.col.saturating_sub(hscroll);
+                    let to = end.col.saturating_sub(hscroll);
+                    if to == 0 || from >= width {
+                        return None;
+                    }
+                    Some((
+                        from.min(width),
+                        to.min(width),
+                        index == app.current_match,
+                    ))
+                })
                 .collect();
-            highlighted(
-                line,
-                &styles,
-                app.selection_for_row(row, line.len()),
-                &row_matches,
-            )
+            let selection = app.selection_for_row(row, line.len()).map(|(from, to)| {
+                (
+                    from.saturating_sub(hscroll).min(width),
+                    to.saturating_sub(hscroll).min(width),
+                )
+            });
+            highlighted(&shown, &shown_styles, selection, &row_matches)
         })
         .collect();
 
@@ -949,7 +1061,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
         && app.row >= app.scroll
         && app.row < app.scroll + visible
     {
-        let x = text_area.x + (app.col as u16).min(text_area.right().saturating_sub(1));
+        let x = text_area.x
+            + (app.col.saturating_sub(app.hscroll) as u16)
+                .min(text_area.right().saturating_sub(1));
         let y = text_area.y + (app.row - app.scroll) as u16;
         frame.set_cursor_position((x, y));
     }
@@ -1008,8 +1122,32 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{closing_pair, is_closing, thumb_bounds, App, Buffer, Prompt, PromptAction};
+    use super::{
+        closing_pair, is_closing, next_word_col, previous_word_col, thumb_bounds, App, Buffer,
+        Prompt, PromptAction,
+    };
     use std::path::PathBuf;
+
+    #[test]
+    fn word_jumps_skip_separators() {
+        let line: Vec<char> = "one two".chars().collect();
+        assert_eq!(next_word_col(&line, 0), 3);
+        assert_eq!(next_word_col(&line, 3), 7);
+        assert_eq!(previous_word_col(&line, 7), 4);
+        assert_eq!(previous_word_col(&line, 4), 0);
+    }
+
+    #[test]
+    fn horizontal_scroll_follows_cursor() {
+        let mut app = App::new(Buffer::from_text(
+            "x".repeat(100),
+            PathBuf::from("long.txt"),
+        ));
+        app.view_width = 10;
+        app.col = 25;
+        app.clamp();
+        assert_eq!(app.hscroll, 16);
+    }
 
     #[test]
     fn live_search_updates_matches_and_clear_exits() {
