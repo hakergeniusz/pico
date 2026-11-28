@@ -568,7 +568,7 @@ impl App {
     }
 
     fn scroll_lines(&mut self, delta: isize) {
-        let max_scroll = self.buffer.lines.len().saturating_sub(self.viewport);
+        let max_scroll = self.buffer.visible_lines().saturating_sub(self.viewport);
         if delta < 0 {
             self.scroll = self.scroll.saturating_sub(delta.unsigned_abs());
         } else {
@@ -581,7 +581,7 @@ impl App {
         if track == 0 {
             return;
         }
-        let total = self.buffer.lines.len();
+        let total = self.buffer.visible_lines();
         let max_scroll = total.saturating_sub(self.viewport);
         self.scroll = ((view_row * total) / track).min(max_scroll);
         self.message = format!("scroll {}", self.scroll + 1);
@@ -913,7 +913,8 @@ fn draw(frame: &mut Frame, app: &mut App) {
     let [editor, status_area] =
         Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
-    let digits = app.buffer.lines.len().max(1).to_string().len();
+    let total_lines = app.buffer.visible_lines();
+    let digits = total_lines.max(1).to_string().len();
     let gutter_width = if app.show_line_numbers { digits + 1 } else { 0 };
     app.gutter_width = gutter_width;
     app.editor_area = editor;
@@ -940,7 +941,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
     app.view_width = text_area.width as usize;
 
     let gutter_lines: Vec<Line> = (app.scroll..app.scroll + visible)
-        .take_while(|row| *row < app.buffer.lines.len())
+        .take_while(|row| *row < total_lines)
         .map(|row| {
             Line::from(Span::styled(
                 format!("{:>width$} ", row + 1, width = digits),
@@ -950,7 +951,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         .collect();
 
     let ext = syntax::extension(app.buffer.path.as_deref());
-    let text_lines: Vec<Line> = app
+    let mut text_lines: Vec<Line> = app
         .buffer
         .lines
         .iter()
@@ -996,10 +997,12 @@ fn draw(frame: &mut Frame, app: &mut App) {
             highlighted(&shown, &shown_styles, selection, &row_matches)
         })
         .collect();
+    if app.buffer.trailing_newline && text_lines.len() < visible {
+        text_lines.push(Line::from(String::new()));
+    }
 
     let track = scrollbar_area.height as usize;
-    let (thumb_start, thumb_size) =
-        thumb_bounds(app.buffer.lines.len(), visible, app.scroll, track);
+    let (thumb_start, thumb_size) = thumb_bounds(total_lines, visible, app.scroll, track);
     let scrollbar_lines: Vec<Line> = (0..track)
         .map(|row| {
             let (glyph, style) = if row >= thumb_start && row < thumb_start + thumb_size {

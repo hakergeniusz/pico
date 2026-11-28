@@ -105,7 +105,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = "0.1.8" }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = "0.1.9" }
           $name = "pico-$version-x86_64-pc-windows-msvc"
           New-Item -ItemType Directory -Path "dist/$name" -Force | Out-Null
           Copy-Item "target/x86_64-pc-windows-msvc/release/pico.exe" "dist/$name/pico.exe"

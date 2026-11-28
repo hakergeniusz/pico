@@ -93,6 +93,10 @@ impl Buffer {
         text
     }
 
+    pub fn visible_lines(&self) -> usize {
+        self.lines.len() + usize::from(self.trailing_newline)
+    }
+
     pub fn line_len(&self, row: usize) -> usize {
         self.lines.get(row).map_or(0, Vec::len)
     }
@@ -328,6 +332,14 @@ mod tests {
             "hello\nworld"
         );
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn visible_lines_include_the_trailing_newline() {
+        let with_newline = Buffer::from_text("a\n".to_string(), PathBuf::from("x.txt"));
+        assert_eq!(with_newline.visible_lines(), 2);
+        let without = Buffer::from_text("a".to_string(), PathBuf::from("x.txt"));
+        assert_eq!(without.visible_lines(), 1);
     }
 
     #[test]
